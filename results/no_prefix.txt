@@ -1,0 +1,8 @@
+{
+  "accuracy": 0.8669111302847282,
+  "intent_accuracy": 0.9826358930112166,
+  "slot_recall": 0.9721899095416132,
+  "slot_precision": 0.6605861049481632,
+  "slot_f1": 0.6620166302738777,
+  "parsing_accuracy": 1.0
+}
