@@ -163,7 +163,7 @@ class T5PrefixTuning(nn.Module):
 
         return self.model(inputs_embeds=encoder_embeds, attention_mask=attention_mask, labels=labels)
 
-    def generate(self, proc_batch, num_beams=5, max_new_tokens=100, do_sample=False, temperature=0.7, top_p=0.95, top_k=20):
+    def generate(self, proc_batch, num_beams=5, max_new_tokens=100):
         enc_tok_embeds = self.model.shared(proc_batch['input_ids'])
 
         encoder_embeds = torch.cat([
@@ -175,16 +175,6 @@ class T5PrefixTuning(nn.Module):
             proc_batch['attention_mask']
         ], dim=1)
 
-        if do_sample:
-            return self.model.generate(
-                inputs_embeds=encoder_embeds,
-                attention_mask=attention_mask,
-                do_sample=True,
-                temperature=temperature,
-                top_k=top_k,
-                top_p=top_p
-            )
-
         return self.model.generate(
             inputs_embeds=encoder_embeds,
             attention_mask=attention_mask,
@@ -192,31 +182,6 @@ class T5PrefixTuning(nn.Module):
             max_new_tokens=max_new_tokens,
         )
             
-class VanillaT5(nn.Module):
-
-    def __init__(self):
-        super().__init__()
-        self.model = transformers.T5ForConditionalGeneration.from_pretrained("t5-base").to(device)
-
-    def forward(self, proc_batch):
-        return self.model(**proc_batch)
-
-    def generate(self, proc_batch, num_beams=5, max_new_tokens=100, do_sample=False, temperature=0.7, top_p=0.95, top_k=20):
-        if do_sample:
-            return self.model.generate(
-                **proc_batch,
-                do_sample=True,
-                temperature=temperature,
-                top_k=top_k,
-                top_p=top_p
-            )
-
-        return self.model.generate(
-            **proc_batch,
-            num_beams=num_beams,
-            max_new_tokens=max_new_tokens,
-        )
-
 def construct_roberta_forward_fn(model, tokenizer):
 
     def roberta_forward_fn(batch):
@@ -321,23 +286,11 @@ def t5_generate(model, tokenizer, dl):
             proc_batch = tokenizer(batch[0], return_tensors="pt", padding=True, 
                     truncation=True).to(device)
 
-            if config.compat:
-                # compatiability mode. 
-                toks = model.generate(
-                    proc_batch, 
-                    num_beams=config.n_beams, 
-                    max_new_tokens=config.max_new_tokens,
-                )
-            else:
-                toks = model.generate(
-                    proc_batch, 
-                    num_beams=config.n_beams, 
-                    max_new_tokens=config.max_new_tokens,
-                    do_sample=config.do_sample,
-                    temperature=config.temperature,
-                    top_k=config.top_k,
-                    top_p=config.top_p
-                )
+            toks = model.generate(
+                proc_batch, 
+                num_beams=config.n_beams, 
+                max_new_tokens=config.max_new_tokens,
+            )
 
             gens += tokenizer.batch_decode(toks, skip_special_tokens=True)
             
@@ -353,7 +306,7 @@ def train_roberta(train_data, val_data):
 
     model = transformers.RobertaForSequenceClassification.from_pretrained("roberta-base", num_labels=len(intent_strs)).to(device)
     tokenizer = transformers.AutoTokenizer.from_pretrained("roberta-base")
-    optimizer = optim.AdamW(model.parameters(), lr=config.roberta_lr)
+    optimizer = optim.Adam(model.parameters(), lr=config.roberta_lr)
 
     forward_fn = construct_roberta_forward_fn(model, tokenizer)
 
@@ -372,10 +325,7 @@ def train_t5(train_data, val_data):
     train_dl = DataLoader(train_ds, collate_fn=dl_collate_fn, batch_size=config.train_batch_size, num_workers=config.n_workers, shuffle=True)
     val_dl = DataLoader(val_ds, collate_fn=dl_collate_fn, batch_size=config.val_batch_size, num_workers=config.n_workers, shuffle=False)
 
-    if config.n_prefixes > 0:
-        model = T5PrefixTuning(n_prefixes=config.n_prefixes)
-    else:
-        model = VanillaT5()
+    model = T5PrefixTuning(n_prefixes=config.n_prefixes)
 
     tokenizer = transformers.T5Tokenizer.from_pretrained("t5-base")
     optimizer = optim.AdamW(model.parameters(), lr=config.t5_lr)
@@ -454,16 +404,16 @@ def parse_args():
     train_parser.add_argument('val_ds_path', type=str)
     train_parser.add_argument('--no-roberta', action='store_true')
     train_parser.add_argument('--no-t5', action='store_true')
-    train_parser.add_argument('--max-t5-epochs', type=int, default=20)
-    train_parser.add_argument('--max-roberta-epochs', type=int, default=4)
+    train_parser.add_argument('--max-t5-epochs', type=int, default=15)
+    train_parser.add_argument('--max-roberta-epochs', type=int, default=6)
     train_parser.add_argument('--patience', type=int, default=2)
-    train_parser.add_argument('--n-prefixes', type=int, default=50)
-    train_parser.add_argument('--n-workers', type=int, default=4)
+    train_parser.add_argument('--n-prefixes', type=int, default=20)
+    train_parser.add_argument('--n-workers', type=int, default=2)
     train_parser.add_argument('--train-batch-size', type=int, default=16)
     train_parser.add_argument('--val-batch-size', type=int, default=32)
-    train_parser.add_argument('--save-t5-name', type=str, default='cs1200869_model')
-    train_parser.add_argument('--save-roberta-name', type=str, default='cs1200869_roberta_model')
-    train_parser.add_argument('--roberta-lr', type=float, default=5e-5)
+    train_parser.add_argument('--save-t5-name', type=str, default='model_b.pt')
+    train_parser.add_argument('--save-roberta-name', type=str, default='model_a.pt')
+    train_parser.add_argument('--roberta-lr', type=float, default=1e-5)
     train_parser.add_argument('--t5-lr', type=float, default=5e-5)
     train_parser.add_argument('--debug', action='store_true')
     train_parser.add_argument('--debug-train-len', type=int, default=128)
@@ -471,17 +421,12 @@ def parse_args():
 
     test_parser.add_argument('test_ds_path', type=str)
     test_parser.add_argument('outpath', type=str)
-    test_parser.add_argument('--do-sample', action='store_true')
-    test_parser.add_argument('--temperature', type=float, default=1)
-    test_parser.add_argument('--top-k', type=float, default=20)
-    test_parser.add_argument('--top-p', type=float, default=0.95)
     test_parser.add_argument('--n-beams', type=int, default=5)
-    test_parser.add_argument('--compat', action='store_true')
-    test_parser.add_argument('--t5-path', type=str, default='cs1200869_model')
-    test_parser.add_argument('--n-workers', type=int, default=4)
+    test_parser.add_argument('--t5-path', type=str, default='model_b.pt')
+    test_parser.add_argument('--n-workers', type=int, default=2)
     test_parser.add_argument('--roberta-batch-size', type=int, default=32)
     test_parser.add_argument('--t5-batch-size', type=int, default=32)
-    test_parser.add_argument('--roberta-path', type=str, default='cs1200869_roberta_model')
+    test_parser.add_argument('--roberta-path', type=str, default='model_a.pt')
     test_parser.add_argument('--max-new-tokens', type=int, default=128)
 
     global config
