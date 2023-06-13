@@ -1,0 +1,9 @@
+COL772 NLP A4
+Aniruddha Deb 2020CS10869 Vaibhav Agarwal 2020CS10447
+
+For our final model we are using roberta-base and t5-base.
+Intent accuracy from vanilla t5 was poor, so we trained a model using roberta just to predict the intents. This gave us the intents with a decent accuracy, which we then use to pass in the prompt for the t5 model. We are also passing in the last history item in the prompt to help in cases of InferFromContext. We noticed that user lists and user notes aren't really being used in the output. Contacts are being used and we tried to pass in the useful contacts in the prompt but that led to a slight decrease in accuracy.
+
+We tried removing disfluency fromt the input by preprocessing it before sending it to the model, but this didn't give any noticable improvement.
+
+What worked well for us was prefix tuning. It did boost the accuracy by a small margin. We tried various learning rates for roberta and t5 and played with other hyperparameters, and were able to tune our model to perform better than before.
